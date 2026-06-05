@@ -1,0 +1,6 @@
+{
+  "name": "Veklom Sovereign",
+  "description": "Repo risk gate, governance, and dev scope verification interface",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
