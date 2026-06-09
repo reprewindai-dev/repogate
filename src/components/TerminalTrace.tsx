@@ -182,8 +182,10 @@ export const TerminalTrace: React.FC<TerminalTraceProps> = ({
 
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-1.5 max-h-[145px] overflow-y-auto pr-1">
             {scannedFilesList.map((path, idx) => {
-              const isCurrent = isScanning && idx === currentStepIndex;
-              const isPast = (currentStepIndex === -1 && events.length > 0) || (currentStepIndex > idx);
+              // Core scanning steps start from currentStepIndex = 3 (Step 0, 1, 2 are setup/initialization steps).
+              const fileIndex = currentStepIndex - 3;
+              const isCurrent = isScanning && idx === fileIndex;
+              const isPast = (currentStepIndex === -1 && events.length > 0) || (currentStepIndex - 3 > idx);
               const pathFinding = findings.find(f => f.path === path);
               const hasFailure = !!pathFinding;
 

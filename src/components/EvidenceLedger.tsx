@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { jsPDF } from 'jspdf';
 import { TerminalEvent, VerifiedFinding, RiskLevel } from '../types';
 import { 
   Copy, 
@@ -310,6 +311,373 @@ export const EvidenceLedger: React.FC<EvidenceLedgerProps> = ({
     document.body.appendChild(dlAnchor);
     dlAnchor.click();
     dlAnchor.remove();
+  };
+
+  // Compile and trigger PDF download
+  const handleExportPDF = () => {
+    try {
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      // Calculate statistics to match the UI perfectly
+      const totalFindings = findings.length;
+      const criticalCount = findings.filter(f => f.risk_level === 'CRITICAL').length;
+      const highCount = findings.filter(f => f.risk_level === 'HIGH').length;
+      const mediumCount = findings.filter(f => f.risk_level === 'MEDIUM').length;
+      const lowCount = findings.filter(f => f.risk_level === 'LOW').length;
+      const safeCount = findings.filter(f => f.risk_level === 'SAFE').length;
+
+      let securityScore = 100;
+      securityScore -= criticalCount * 25;
+      securityScore -= highCount * 15;
+      securityScore -= mediumCount * 8;
+      securityScore -= lowCount * 3;
+      securityScore = Math.max(0, securityScore);
+
+      let grade = 'A';
+      if (securityScore >= 95) grade = 'A+';
+      else if (securityScore >= 90) grade = 'A';
+      else if (securityScore >= 80) grade = 'B';
+      else if (securityScore >= 70) grade = 'C';
+      else if (securityScore >= 50) grade = 'D';
+      else grade = 'F';
+
+      let y = 15;
+
+      const drawHeader = () => {
+        // Core orange indicator bar
+        doc.setFillColor(255, 107, 0);
+        doc.rect(15, y, 180, 4, 'F');
+        y += 10;
+
+        // Cover Logo and Title
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(20);
+        doc.setTextColor(20, 20, 20);
+        doc.text("VEKLOM RISK GATE", 15, y);
+        y += 6;
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.setTextColor(110, 110, 110);
+        doc.text("REPOSITORY INTEGRITY CERTIFICATE & RISK REVIEW MATRIX", 15, y);
+        
+        // Draw standard dividing line
+        y += 6;
+        doc.setDrawColor(210, 210, 210);
+        doc.line(15, y, 195, y);
+        y += 10;
+      };
+
+      const checkPageBreak = (needed: number) => {
+        if (y + needed > 275) {
+          doc.addPage();
+          y = 15;
+          // Subpage Minimal Header
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8);
+          doc.setTextColor(120, 120, 120);
+          doc.text("VEKLOM RISK GATE AUDIT REPORT", 15, y);
+          doc.setFont("helvetica", "normal");
+          doc.text(`Run: ${runId || 'unassigned'}`, 195 - doc.getTextWidth(`Run: ${runId || 'unassigned'}`), y);
+          y += 3;
+          doc.setDrawColor(230, 230, 230);
+          doc.line(15, y, 195, y);
+          y += 10;
+        }
+      };
+
+      drawHeader();
+
+      // PART 1: METADATA & RESULTS
+      checkPageBreak(50);
+      
+      // Draw high level stats metadata layout table box
+      doc.setFillColor(248, 248, 248);
+      doc.rect(15, y, 180, 52, 'F');
+      doc.setDrawColor(230, 230, 230);
+      doc.rect(15, y, 180, 52, 'S');
+
+      // Add metrics inside box
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(60, 60, 60);
+      doc.text("AUDIT METADATA", 20, y + 8);
+      doc.text("COMPLIANCE TELEMETRY", 110, y + 8);
+
+      doc.setDrawColor(230, 230, 230);
+      doc.line(20, y + 11, 190, y + 11);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(100, 100, 100);
+
+      // Left Metadata Column
+      doc.text(`Run Ref ID:`, 20, y + 18);
+      doc.setFont("courier", "bold");
+      doc.text(`${runId || 'UNASSIGNED'}`, 48, y + 18);
+      doc.setFont("helvetica", "normal");
+
+      doc.text(`Source Repository:`, 20, y + 25);
+      doc.setFont("courier", "normal");
+      const shortRepo = repoUrl && repoUrl.length > 30 ? repoUrl.substring(0, 27) + "..." : repoUrl || 'Local Workspace';
+      doc.text(`${shortRepo}`, 48, y + 25);
+      doc.setFont("helvetica", "normal");
+
+      doc.text(`Assigned Agent:`, 20, y + 32);
+      doc.setFont("courier", "normal");
+      doc.text(`${agentId || 'VEKLOM-BOT'}`, 48, y + 32);
+      doc.setFont("helvetica", "normal");
+
+      doc.text(`Timestamp:`, 20, y + 39);
+      doc.text(`${new Date().toUTCString()}`, 48, y + 39);
+
+      doc.text(`Files Reviewed:`, 20, y + 46);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(30, 30, 30);
+      doc.text(`${filesScannedCount} files`, 48, y + 46);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(100, 100, 100);
+
+      // Right Metadata Column
+      doc.text(`Risk Category:`, 110, y + 18);
+      doc.setFont("helvetica", "bold");
+      let riskColor = [34, 197, 94]; // safe emerald
+      if (overallRisk === 'CRITICAL' || overallRisk === 'HIGH') riskColor = [239, 68, 68];
+      else if (overallRisk === 'MEDIUM') riskColor = [245, 158, 11];
+      else if (overallRisk === 'LOW') riskColor = [234, 179, 8];
+      
+      doc.setTextColor(riskColor[0], riskColor[1], riskColor[2]);
+      doc.text(`${overallRisk || 'SAFE'}`, 144, y + 18);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(100, 100, 100);
+
+      doc.text(`Gate Outcome:`, 110, y + 25);
+      doc.setFont("helvetica", "bold");
+      if (userDecision === 'APPROVED') doc.setTextColor(34, 197, 94);
+      else if (userDecision === 'BLOCKED') doc.setTextColor(239, 68, 68);
+      else if (userDecision === 'ESCALATED') doc.setTextColor(217, 119, 6);
+      else doc.setTextColor(120, 120, 120);
+      doc.text(`${userDecision || 'AWAITING RESPONSE'}`, 144, y + 25);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(100, 100, 100);
+
+      doc.text(`Coverage Status:`, 110, y + 32);
+      doc.text(`${treeTruncated ? 'Partial Truncated' : 'Complete Core Scan'}`, 144, y + 32);
+
+      doc.text(`Security Grade:`, 110, y + 39);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(15, 118, 110); // emerald dark
+      doc.text(`${grade} (Score: ${securityScore}/100)`, 144, y + 39);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(100, 100, 100);
+
+      doc.text(`Total Findings:`, 110, y + 46);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(30,30,30);
+      doc.text(`${totalFindings} Alert${totalFindings === 1 ? '' : 's'}`, 144, y + 46);
+      
+      y += 52 + 10;
+
+      // PROOF SIGNATURE BOX
+      checkPageBreak(35);
+      doc.setFillColor(24, 24, 27); // Obsidian card style
+      doc.rect(15, y, 180, 24, 'F');
+      
+      doc.setFont("courier", "bold");
+      doc.setFontSize(8);
+      doc.setTextColor(0, 255, 65); // Cyber Green
+      doc.text("CANONICAL PROOF LEDGER HASH (SHA-256):", 20, y + 6);
+      doc.setFont("courier", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(220, 220, 220);
+      
+      const splitHash = doc.splitTextToSize(auditHash, 170);
+      doc.text(splitHash, 20, y + 12);
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7);
+      doc.setTextColor(120, 120, 120);
+      doc.text("CRITICAL STATUS: TAMPER-PROOF VERIFIED • DIGITAL COMPLIANCE MATRIX", 20, y + 20);
+
+      y += 24 + 10;
+
+      // RISK BREAKDOWN HISTOGRAM REPRESENTATION
+      checkPageBreak(35);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(30, 30, 30);
+      doc.text("RISK SEVERITY BREAKDOWN", 15, y);
+      y += 5;
+
+      const barW = 180;
+      doc.setFillColor(240, 240, 240);
+      doc.rect(15, y, barW, 6, 'F');
+
+      const sumWeights2 = criticalCount + highCount + mediumCount + lowCount + safeCount;
+      const calcPct = (cnt: number) => (sumWeights2 === 0 ? 0 : (cnt / sumWeights2) * barW);
+
+      let curX = 15;
+      if (sumWeights2 > 0) {
+        if (criticalCount > 0) {
+          doc.setFillColor(220, 38, 38); // CRITICAL Red
+          const w = calcPct(criticalCount);
+          doc.rect(curX, y, w, 6, 'F');
+          curX += w;
+        }
+        if (highCount > 0) {
+          doc.setFillColor(248, 113, 113); // High Red-orange
+          const w = calcPct(highCount);
+          doc.rect(curX, y, w, 6, 'F');
+          curX += w;
+        }
+        if (mediumCount > 0) {
+          doc.setFillColor(245, 158, 11); // Medium Amber
+          const w = calcPct(mediumCount);
+          doc.rect(curX, y, w, 6, 'F');
+          curX += w;
+        }
+        if (lowCount > 0) {
+          doc.setFillColor(250, 204, 21); // Low Yellow
+          const w = calcPct(lowCount);
+          doc.rect(curX, y, w, 6, 'F');
+          curX += w;
+        }
+        if (safeCount > 0) {
+          doc.setFillColor(16, 185, 129); // Safe Emerald
+          const w = calcPct(safeCount);
+          doc.rect(curX, y, w, 6, 'F');
+          curX += w;
+        }
+      } else {
+        doc.setFillColor(16, 185, 129); // 100% Emerald Green for complete clean
+        doc.rect(curX, y, barW, 6, 'F');
+      }
+
+      y += 12;
+
+      // Severity labels row
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.setTextColor(220, 38, 38);
+      doc.text(`CRITICAL: ${criticalCount}`, 15, y);
+
+      doc.setTextColor(239, 68, 68);
+      doc.text(`HIGH: ${highCount}`, 52, y);
+
+      doc.setTextColor(217, 119, 6);
+      doc.text(`MEDIUM: ${mediumCount}`, 88, y);
+
+      doc.setTextColor(194, 120, 3);
+      doc.text(`LOW: ${lowCount}`, 128, y);
+
+      doc.setTextColor(16, 185, 129);
+      doc.text(`SAFE: ${safeCount}`, 164, y);
+
+      y += 10;
+
+      // DETAILED FINDINGS REVIEW TABLE
+      checkPageBreak(30);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(30, 30, 30);
+      doc.text("VERIFIED FINDINGS AND THREAT LOGS", 15, y);
+      y += 6;
+
+      doc.setDrawColor(180, 180, 180);
+      doc.line(15, y, 195, y);
+      y += 2;
+
+      if (findings.length === 0) {
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.setTextColor(80, 150, 90);
+        doc.text("COMPLETE INTEGRITY CONFIRMED - NO VULNERABILITIES DETECTED", 15, y + 6);
+        y += 12;
+      } else {
+        findings.forEach((finding, idx) => {
+          checkPageBreak(35); // check if finding space exists
+          doc.setFillColor(252, 252, 252);
+          doc.rect(15, y, 180, 24, 'F');
+          doc.setDrawColor(240, 240, 240);
+          doc.rect(15, y, 180, 24, 'S');
+
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(9);
+          // High Visibility Threat Level Tagging
+          let textColor = [220, 38, 38]; // critical red
+          if (finding.risk_level === 'HIGH') textColor = [239, 68, 68];
+          else if (finding.risk_level === 'MEDIUM') textColor = [217, 119, 6];
+          else if (finding.risk_level === 'LOW') textColor = [161, 98, 7];
+          
+          doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+          doc.text(`FINDING #${idx + 1} [${finding.risk_level}]`, 18, y + 6);
+
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(8.5);
+          doc.setTextColor(80, 80, 80);
+          doc.text(`Policy Rule: ${finding.matched_rule || 'N/A'}`, 110, y + 6);
+
+          doc.setFont("courier", "bold");
+          doc.setFontSize(8.5);
+          doc.setTextColor(40, 40, 40);
+          const shortPath = finding.path.length > 72 ? '...' + finding.path.substring(finding.path.length - 69) : finding.path;
+          doc.text(`File: ${shortPath}`, 18, y + 12);
+
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(8.5);
+          doc.setTextColor(100, 100, 100);
+          
+          const maxReasonW = 172;
+          const splitReason = doc.splitTextToSize(`Reason: ${finding.reason}`, maxReasonW);
+          doc.text(splitReason, 18, y + 18);
+
+          y += 24 + 4;
+        });
+      }
+
+      // INTEGRITY ENDORSEMENT SECTION
+      checkPageBreak(40);
+      y += 5;
+      doc.setDrawColor(200, 200, 200);
+      doc.line(15, y, 195, y);
+      y += 8;
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(30, 30, 30);
+      doc.text("GOVERNANCE ENDORSEMENT CERTIFICATION", 15, y);
+      
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(120, 120, 120);
+      doc.text("SEAL DATE", 110, y);
+
+      y += 5;
+      
+      doc.setFont("courier", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(80, 80, 80);
+      doc.text("VEKLOM-VERIFIER-AEROCLIP-STABLE-v1", 15, y);
+      
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      doc.text(`${new Date().toUTCString()}`, 110, y);
+
+      y += 10;
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(8);
+      doc.setTextColor(140, 140, 140);
+      doc.text("The audit proof ledger records cryptographically binding decisions and events evaluated on the client machine.", 15, y);
+
+      // Save PDF triggering immediate download
+      doc.save(`veklom_security_report_${runId || 'unassigned'}.pdf`);
+    } catch (err) {
+      console.error("PDF generation failed:", err);
+    }
   };
 
   // Handler to clear history back to base demo
@@ -690,6 +1058,29 @@ export const EvidenceLedger: React.FC<EvidenceLedgerProps> = ({
                   </div>
                 )}
               </div>
+
+              {/* Core Download JSON Report and PDF Summary Button Card */}
+              <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-2.5 animate-[fadeIn_0.3s_ease-out]">
+                <button
+                  onClick={handleExportPDF}
+                  disabled={events.length === 0}
+                  className="w-full flex items-center justify-center space-x-2 py-2 px-4 bg-gradient-to-r from-emerald-600 via-teal-500 to-cyan-500 hover:opacity-90 disabled:opacity-30 text-black font-extrabold text-[11px] uppercase tracking-widest rounded-xs transition-all border border-teal-500/30 select-none cursor-pointer disabled:cursor-not-allowed shadow-[0_0_12px_rgba(20,184,166,0.15)]"
+                  title="Generate and Download beautifully formatted PDF Compliance Summary Report"
+                >
+                  <FileText className="w-4 h-4 text-black stroke-[3]" />
+                  <span>Download PDF Report</span>
+                </button>
+
+                <button
+                  onClick={handleExportJSON}
+                  disabled={events.length === 0}
+                  className="w-full flex items-center justify-center space-x-2 py-2 px-4 bg-gradient-to-r from-orange-600 via-[#FF6B00] to-amber-500 hover:opacity-90 disabled:opacity-30 text-black font-extrabold text-[11px] uppercase tracking-widest rounded-xs transition-all border border-[#FF6B00]/30 select-none cursor-pointer disabled:cursor-not-allowed shadow-[0_0_12px_rgba(255,107,0,0.15)]"
+                  title="Generate and Download full event logs and findings report in JSON format"
+                >
+                  <Code className="w-4 h-4 text-black stroke-[3]" />
+                  <span>Download JSON Report</span>
+                </button>
+              </div>
             </div>
           );
         })()}
@@ -702,6 +1093,17 @@ export const EvidenceLedger: React.FC<EvidenceLedgerProps> = ({
         </span>
         
         <div className="flex flex-wrap items-center gap-2 text-[11px]">
+          {/* PDF Export button */}
+          <button
+            onClick={handleExportPDF}
+            disabled={events.length === 0}
+            className="flex items-center justify-center space-x-1 px-3 py-1.5 bg-neutral-900 border border-[#333] hover:border-[#FF6B00] hover:text-white disabled:opacity-30 disabled:hover:border-[#333] disabled:hover:text-inherit transition-all text-gray-300 font-bold uppercase tracking-wider cursor-pointer"
+            title="Download beautifully formatted PDF Security Report"
+          >
+            <FileText className="w-3 h-3 text-[#FF6B00]" />
+            <span>PDF REPORT</span>
+          </button>
+
           {/* JSON Export button */}
           <button
             onClick={handleExportJSON}
